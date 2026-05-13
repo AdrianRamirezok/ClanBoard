@@ -3,6 +3,7 @@ export interface Habitant {
   name: string
   avatar: string
   xp: number
+  xpMensual: number
 }
 
 export type TaskDifficulty = 'básica' | 'intermedia' | 'épica'
@@ -17,6 +18,7 @@ export interface Task {
   rotation: number
   createdAt: Date
   difficulty: TaskDifficulty
+  dueDate?: string | null  // YYYY-MM-DD
 }
 
 export const noteColors = {
