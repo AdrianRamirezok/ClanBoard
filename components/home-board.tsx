@@ -19,7 +19,7 @@ export function HomeBoard() {
   const searchParams = useSearchParams()
   const router = useRouter()
   const { logout } = useAuth()
-  const { habitants, tasks, hogar, esAdmin, miPerfilId, loading, error, completeTask, addTask, editTask, updatePerfil, updateHogarNombre, regenerarCodigo } = useDashboard()
+  const { habitants, tasks, hogar, esAdmin, miPerfilId, loading, error, completeTask, addTask, editTask, deleteTask, updatePerfil, updateHogarNombre, regenerarCodigo } = useDashboard()
 
   const filteredAssigneeFromUrl = searchParams.get('resident') || null
   const [filteredAssignee, setFilteredAssignee] = useState<string | null>(filteredAssigneeFromUrl)
@@ -133,6 +133,7 @@ export function HomeBoard() {
             filteredAssignee={filteredAssignee}
             onCompleteTask={completeTask}
             onEditTask={editTask}
+            onDeleteTask={deleteTask}
             miPerfilId={miPerfilId}
             esAdmin={esAdmin}
           />

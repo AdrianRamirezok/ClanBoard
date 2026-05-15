@@ -13,8 +13,65 @@ const containerVariants = {
 
 const itemVariants = {
   hidden: { opacity: 0, y: -15, scale: 0.88 },
-  visible: { opacity: 1, y: 0, scale: 1, transition: { duration: 0.3, ease: [0.25, 0.46, 0.45, 0.94] } },
+  visible: { opacity: 1, y: 0, scale: 1, transition: { duration: 0.3, ease: [0.25, 0.46, 0.45, 0.94] as [number, number, number, number] } },
 }
+
+// ── Sound ────────────────────────────────────────────────────────────────────
+
+function playCrumpleSound() {
+  try {
+    const AudioCtxClass =
+      window.AudioContext ??
+      (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
+    const ctx = new AudioCtxClass()
+    const now = ctx.currentTime
+
+    const bufLen = Math.floor(ctx.sampleRate * 0.4)
+    const noiseBuffer = ctx.createBuffer(1, bufLen, ctx.sampleRate)
+    const noiseData = noiseBuffer.getChannelData(0)
+    for (let i = 0; i < bufLen; i++) noiseData[i] = Math.random() * 2 - 1
+
+    const noise = ctx.createBufferSource()
+    noise.buffer = noiseBuffer
+
+    const bpf = ctx.createBiquadFilter()
+    bpf.type = 'bandpass'
+    bpf.frequency.setValueAtTime(3000, now)
+    bpf.frequency.exponentialRampToValueAtTime(300, now + 0.4)
+    bpf.Q.value = 1.5
+
+    const noiseGain = ctx.createGain()
+    noiseGain.gain.setValueAtTime(0.4, now)
+    noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.4)
+
+    noise.connect(bpf)
+    bpf.connect(noiseGain)
+    noiseGain.connect(ctx.destination)
+    noise.start(now)
+    noise.stop(now + 0.4)
+
+    const osc = ctx.createOscillator()
+    osc.type = 'sine'
+    osc.frequency.setValueAtTime(150, now + 0.38)
+    osc.frequency.exponentialRampToValueAtTime(80, now + 0.58)
+
+    const plopGain = ctx.createGain()
+    plopGain.gain.setValueAtTime(0.001, now + 0.38)
+    plopGain.gain.linearRampToValueAtTime(0.5, now + 0.40)
+    plopGain.gain.exponentialRampToValueAtTime(0.001, now + 0.58)
+
+    osc.connect(plopGain)
+    plopGain.connect(ctx.destination)
+    osc.start(now + 0.38)
+    osc.stop(now + 0.58)
+
+    setTimeout(() => ctx.close(), 900)
+  } catch {
+    // AudioContext unavailable (SSR, sandboxed iframe, etc.)
+  }
+}
+
+// ── TaskBoard ────────────────────────────────────────────────────────────────
 
 interface TaskBoardProps {
   tasks: Task[]
@@ -22,11 +79,12 @@ interface TaskBoardProps {
   filteredAssignee: string | null
   onCompleteTask: (id: string) => void
   onEditTask: (taskId: string, edits: TaskEdits) => Promise<void>
+  onDeleteTask: (taskId: string) => Promise<void>
   miPerfilId: string | null
   esAdmin: boolean
 }
 
-export function TaskBoard({ tasks, habitants, filteredAssignee, onCompleteTask, onEditTask, miPerfilId, esAdmin }: TaskBoardProps) {
+export function TaskBoard({ tasks, habitants, filteredAssignee, onCompleteTask, onEditTask, onDeleteTask, miPerfilId, esAdmin }: TaskBoardProps) {
   const [editingTask, setEditingTask] = useState<Task | null>(null)
 
   const getAssignee = (assigneeId: string) => habitants.find(h => h.id === assigneeId)
@@ -72,7 +130,7 @@ export function TaskBoard({ tasks, habitants, filteredAssignee, onCompleteTask, 
                   key={task.id}
                   variants={itemVariants}
                   layout
-                  exit={{ opacity: 0, scale: 0.7, transition: { duration: 0.2 } }}
+                  exit={{ opacity: 0, scale: 0.2, transition: { duration: 0.35, ease: 'easeIn' } }}
                   whileHover={{ zIndex: 10 }}
                   className="w-full max-w-[220px]"
                 >
@@ -83,6 +141,7 @@ export function TaskBoard({ tasks, habitants, filteredAssignee, onCompleteTask, 
                     isFiltered={filteredAssignee !== null && task.assigneeId !== filteredAssignee}
                     canEdit={canEdit}
                     onEdit={() => setEditingTask(task)}
+                    onDelete={() => { playCrumpleSound(); onDeleteTask(task.id) }}
                   />
                 </motion.div>
               )

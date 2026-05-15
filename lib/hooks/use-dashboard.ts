@@ -189,7 +189,6 @@ export function useDashboard() {
       if (!task || task.completed) return
 
       const xpReward = difficultyXP[task.difficulty]
-      const habitant = state.habitants.find(h => h.id === task.assigneeId)
 
       // Actualización optimista
       setState(prev => ({
@@ -207,17 +206,20 @@ export function useDashboard() {
       // Persistir en Supabase
       await supabase.from('tareas').update({ completada: true }).eq('id', taskId)
 
-      if (habitant) {
-        await supabase
-          .from('perfiles')
-          .update({
-            xp: habitant.xp + xpReward,
-            xp_mensual: habitant.xpMensual + xpReward,
-          })
-          .eq('id', task.assigneeId)
+      if (task.assigneeId) {
+        // SECURITY DEFINER function: bypasses the "perfiles_update" RLS policy
+        // (which only allows updating your own row) and does an atomic DB-side
+        // increment so the value is always consistent regardless of local state.
+        const { error: xpError } = await supabase.rpc('incrementar_xp', {
+          p_perfil_id: task.assigneeId,
+          p_cantidad: xpReward,
+        })
+        if (xpError) {
+          console.error('[completeTask] Error al actualizar XP:', xpError)
+        }
       }
     },
-    [state.tasks, state.habitants, supabase]
+    [state.tasks, supabase]
   )
 
   const addTask = useCallback(
@@ -334,5 +336,17 @@ export function useDashboard() {
     )
   }, [state.hogar, supabase])
 
-  return { ...state, completeTask, addTask, editTask, updatePerfil, updateHogarNombre, regenerarCodigo }
+  const deleteTask = useCallback(
+    async (taskId: string) => {
+      const { error } = await supabase.from('tareas').delete().eq('id', taskId)
+      if (error) {
+        console.error('[deleteTask] Supabase DELETE error:', error)
+        return
+      }
+      setState(prev => ({ ...prev, tasks: prev.tasks.filter(t => t.id !== taskId) }))
+    },
+    [supabase]
+  )
+
+  return { ...state, completeTask, addTask, editTask, deleteTask, updatePerfil, updateHogarNombre, regenerarCodigo }
 }
