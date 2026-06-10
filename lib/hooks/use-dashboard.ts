@@ -105,7 +105,7 @@ export function useDashboard() {
   })
 
   useEffect(() => {
-    if (!user) return
+    if (!user?.id) return
 
     async function load() {
       setState(s => ({ ...s, loading: true, error: null }))
@@ -139,7 +139,7 @@ export function useDashboard() {
     }
 
     load()
-  }, [user])
+  }, [user?.id])
 
   const completeTask = useCallback(
     async (taskId: string) => {

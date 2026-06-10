@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useContext, useState } from 'react'
+import { createContext, useContext, useState, useMemo } from 'react'
 import { SessionProvider, useSession, signIn, signOut } from 'next-auth/react'
 
 export interface AuthUser {
@@ -43,9 +43,18 @@ function AuthContextInner({ children }: { children: React.ReactNode }) {
 
   const loading = status === 'loading'
   const isLoggedIn = status === 'authenticated'
-  const user = session?.user
-    ? { id: session.user.id, email: session.user.email }
-    : null
+
+  // Memoized so consumers' useEffect([user]) only fires when id/email actually changes,
+  // not on every re-render of AuthContextInner.
+  const user = useMemo(
+    () =>
+      session?.user?.id
+        ? { id: session.user.id, email: session.user.email ?? '' }
+        : null,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [session?.user?.id, session?.user?.email]
+  )
+
   const hasProfile = session?.user?.hasProfile ?? false
 
   const login = async (email: string, password: string) => {
