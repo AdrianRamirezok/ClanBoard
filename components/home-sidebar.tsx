@@ -44,8 +44,8 @@ export function HomeSidebar({
   const miHabitant = habitants.find(h => h.id === miPerfilId)
 
   const handleCopy = async () => {
-    if (!hogar?.codigo_invitacion) return
-    await navigator.clipboard.writeText(hogar.codigo_invitacion.toUpperCase())
+    if (!hogar?.codigoInvitacion) return
+    await navigator.clipboard.writeText(hogar.codigoInvitacion.toUpperCase())
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
@@ -117,7 +117,7 @@ export function HomeSidebar({
               </div>
               <div className="flex items-center gap-2">
                 <code className="font-mono text-base font-bold text-amber-700 dark:text-amber-300 tracking-widest flex-1">
-                  {hogar.codigo_invitacion.toUpperCase()}
+                  {hogar.codigoInvitacion.toUpperCase()}
                 </code>
                 <button onClick={handleCopy} title="Copiar código" className="p-1 rounded hover:bg-amber-200/60 transition-colors">
                   {copied ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4 text-amber-600" />}

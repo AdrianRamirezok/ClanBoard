@@ -1,0 +1,640 @@
+﻿=== prisma\schema.prisma ===
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+model Usuario {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  email     String   @unique
+  password  String
+  createdAt DateTime @default(now())
+}
+
+model Hogar {
+  id               String         @id @default(auto()) @map("_id") @db.ObjectId
+  nombre           String
+  codigoInvitacion String         @unique
+  createdAt        DateTime       @default(now())
+  perfiles         Perfil[]
+  tareas           Tarea[]
+  listaCompras     ListaCompras[]
+}
+
+model Perfil {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String   @unique
+  hogarId   String   @db.ObjectId
+  nombre    String
+  rol       String   @default("miembro")
+  avatar    String?
+  xp        Int      @default(0)
+  xpMensual Int      @default(0)
+  createdAt DateTime @default(now())
+  hogar     Hogar    @relation(fields: [hogarId], references: [id])
+}
+
+model Tarea {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  hogarId     String   @db.ObjectId
+  titulo      String
+  descripcion String?
+  asignadoA   String?  @db.ObjectId
+  completada  Boolean  @default(false)
+  xpValor     Int      @default(10)
+  color       String?
+  fechaLimite String?
+  createdAt   DateTime @default(now())
+  hogar       Hogar    @relation(fields: [hogarId], references: [id])
+}
+
+model ListaCompras {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  hogarId     String   @db.ObjectId
+  nombre      String
+  agregadoPor String?  @db.ObjectId
+  comprado    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  hogar       Hogar    @relation(fields: [hogarId], references: [id])
+}
+=== lib\jwt.ts ===
+import jwt from 'jsonwebtoken'
+
+const JWT_SECRET = process.env.JWT_SECRET
+
+if (!JWT_SECRET) {
+  throw new Error('JWT_SECRET no estÃ¡ definido en .env.local')
+}
+
+export interface JwtPayload {
+  userId: string
+  email: string
+}
+
+export function signToken(payload: JwtPayload): string {
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: '30d' })
+}
+
+export function verifyToken(token: string): JwtPayload | null {
+  try {
+    return jwt.verify(token, JWT_SECRET) as JwtPayload
+  } catch {
+    return null
+  }
+}
+=== lib\auth-server.ts ===
+import { cookies } from 'next/headers'
+import { verifyToken, type JwtPayload } from './jwt'
+
+export async function getAuthUser(): Promise<JwtPayload | null> {
+  const cookieStore = await cookies()
+  const token = cookieStore.get('auth-token')?.value
+  if (!token) return null
+  return verifyToken(token)
+}
+
+export const AUTH_COOKIE = {
+  name: 'auth-token',
+  options: {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax' as const,
+    path: '/',
+    maxAge: 30 * 24 * 60 * 60, // 30 dÃ­as
+  },
+} as const
+=== lib\auth-context.tsx ===
+'use client'
+
+import { createContext, useContext, useState, useEffect } from 'react'
+
+export interface AuthUser {
+  id: string
+  email: string
+}
+
+interface SignupParams {
+  email: string
+  password: string
+  nombreHogar: string
+  nombrePerfil: string
+}
+
+interface JoinParams {
+  email: string
+  password: string
+  nombrePerfil: string
+  codigoInvitacion: string
+}
+
+interface AuthContextType {
+  isLoggedIn: boolean
+  user: AuthUser | null
+  loading: boolean
+  settingUp: boolean
+  login: (email: string, password: string) => Promise<void>
+  signup: (params: SignupParams) => Promise<void>
+  joinHogar: (params: JoinParams) => Promise<void>
+  logout: () => Promise<void>
+}
+
+const AuthContext = createContext<AuthContextType | undefined>(undefined)
+
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const [user, setUser] = useState<AuthUser | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [settingUp, setSettingUp] = useState(false)
+
+  useEffect(() => {
+    fetch('/api/auth/me')
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        setUser(data?.user ?? null)
+        setLoading(false)
+      })
+      .catch(() => setLoading(false))
+  }, [])
+
+  const login = async (email: string, password: string) => {
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    })
+    if (!res.ok) {
+      const err = await res.json()
+      throw new Error(err.error || 'Error al iniciar sesiÃ³n')
+    }
+    const { user: userData } = await res.json()
+    setUser(userData)
+  }
+
+  const signup = async ({ email, password, nombreHogar, nombrePerfil }: SignupParams) => {
+    setSettingUp(true)
+    try {
+      const res = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password, mode: 'crear', nombreHogar, nombrePerfil }),
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || 'Error al crear el hogar')
+      }
+      const { user: userData } = await res.json()
+      setUser(userData)
+    } finally {
+      setSettingUp(false)
+    }
+  }
+
+  const joinHogar = async ({ email, password, nombrePerfil, codigoInvitacion }: JoinParams) => {
+    setSettingUp(true)
+    try {
+      const res = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password, mode: 'unirse', nombrePerfil, codigoInvitacion }),
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || 'Error al unirse al hogar')
+      }
+      const { user: userData } = await res.json()
+      setUser(userData)
+    } finally {
+      setSettingUp(false)
+    }
+  }
+
+  const logout = async () => {
+    await fetch('/api/auth/logout', { method: 'POST' })
+    setUser(null)
+  }
+
+  return (
+    <AuthContext.Provider value={{ isLoggedIn: !!user, user, loading, settingUp, login, signup, joinHogar, logout }}>
+      {children}
+    </AuthContext.Provider>
+  )
+}
+
+export function useAuth() {
+  const context = useContext(AuthContext)
+  if (context === undefined) {
+    throw new Error('useAuth debe usarse dentro de AuthProvider')
+  }
+  return context
+}
+=== components\auth-drawer.tsx ===
+'use client'
+
+import { useState, useEffect } from 'react'
+import { AnimatePresence, motion } from 'framer-motion'
+import { X } from 'lucide-react'
+import { useAuth } from '@/lib/auth-context'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+
+export type AuthMode = 'login' | 'register' | 'join'
+
+interface AuthDrawerProps {
+  open: boolean
+  onClose: () => void
+  initialMode?: AuthMode
+}
+
+export function AuthDrawer({ open, onClose, initialMode = 'login' }: AuthDrawerProps) {
+  const { login, signup, joinHogar } = useAuth()
+  const [mode, setMode] = useState<AuthMode>(initialMode)
+
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [nombreHogar, setNombreHogar] = useState('')
+  const [nombrePerfil, setNombrePerfil] = useState('')
+  const [codigoInvitacion, setCodigoInvitacion] = useState('')
+  const [error, setError] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+
+  // Cuando el drawer se abre, cambia al modo pedido y limpia errores
+  useEffect(() => {
+    if (open) {
+      setMode(initialMode)
+      setError('')
+    }
+  }, [open, initialMode])
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setError('')
+    setSubmitting(true)
+    try {
+      if (mode === 'login') {
+        await login(email, password)
+      } else if (mode === 'register') {
+        await signup({ email, password, nombreHogar, nombrePerfil })
+      } else {
+        await joinHogar({ email, password, nombrePerfil, codigoInvitacion })
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error inesperado')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const switchMode = (next: AuthMode) => {
+    setMode(next)
+    setError('')
+  }
+
+  const tabClass = (m: AuthMode) =>
+    `flex-1 py-2 text-sm font-medium transition-colors rounded-none first:rounded-l-md last:rounded-r-md ${
+      mode === m
+        ? 'bg-amber-700 text-white'
+        : 'bg-white text-amber-700 hover:bg-amber-50'
+    }`
+
+  const modeLabel = {
+    login: 'Iniciar sesiÃ³n',
+    register: 'Crear hogar',
+    join: 'Unirse con cÃ³digo',
+  }
+
+  return (
+    <AnimatePresence>
+      {open && (
+        <>
+          {/* Backdrop */}
+          <motion.div
+            key="backdrop"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="fixed inset-0 bg-black/40 z-40"
+            onClick={onClose}
+          />
+
+          {/* Panel */}
+          <motion.aside
+            key="drawer"
+            initial={{ x: '100%' }}
+            animate={{ x: 0 }}
+            exit={{ x: '100%' }}
+            transition={{ type: 'spring', damping: 28, stiffness: 220 }}
+            className="fixed right-0 top-0 bottom-0 w-full md:w-[420px] bg-white shadow-2xl z-50 flex flex-col overflow-y-auto"
+          >
+            {/* BotÃ³n cerrar */}
+            <button
+              onClick={onClose}
+              className="absolute top-4 right-4 p-2 rounded-full hover:bg-amber-50 text-amber-500 hover:text-amber-700 transition-colors z-10"
+              aria-label="Cerrar"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            {/* Cabecera mÃ³vil */}
+            <div className="md:hidden bg-gradient-to-br from-amber-50 to-orange-100 px-8 pt-10 pb-5 text-center">
+              <h1 className="font-handwritten text-4xl font-bold text-amber-900">ClanBoard</h1>
+              <p className="text-amber-700 text-sm mt-1">{modeLabel[mode]}</p>
+            </div>
+
+            <div className="flex-1 px-8 py-8">
+              {/* Cabecera desktop */}
+              <div className="hidden md:block mb-7 pr-8">
+                <h2 className="font-handwritten text-3xl font-bold text-amber-900">{modeLabel[mode]}</h2>
+                <p className="text-amber-600 text-sm mt-1">
+                  {mode === 'login' ? 'Accede a tu hogar familiar'
+                    : mode === 'register' ? 'Crea un nuevo hogar para tu familia'
+                    : 'Ãšnete al hogar de alguien con su cÃ³digo'}
+                </p>
+              </div>
+
+              {/* Tabs */}
+              <div className="flex rounded-md overflow-hidden border border-amber-200 mb-6">
+                <button type="button" onClick={() => switchMode('login')} className={tabClass('login')}>
+                  Iniciar sesiÃ³n
+                </button>
+                <button type="button" onClick={() => switchMode('register')} className={tabClass('register')}>
+                  Crear hogar
+                </button>
+                <button type="button" onClick={() => switchMode('join')} className={tabClass('join')}>
+                  Unirse
+                </button>
+              </div>
+
+              <form onSubmit={handleSubmit} className="space-y-4">
+                {/* Campos de "Crear hogar" */}
+                {mode === 'register' && (
+                  <>
+                    <div>
+                      <label htmlFor="nombreHogar" className="block text-sm font-medium text-amber-900 mb-1">
+                        Nombre del hogar
+                      </label>
+                      <Input
+                        id="nombreHogar"
+                        type="text"
+                        value={nombreHogar}
+                        onChange={e => setNombreHogar(e.target.value)}
+                        placeholder="Casa RamÃ­rez"
+                        required
+                        disabled={submitting}
+                        className="border-amber-200 focus-visible:ring-amber-400"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="nombrePerfil" className="block text-sm font-medium text-amber-900 mb-1">
+                        Tu nombre
+                      </label>
+                      <Input
+                        id="nombrePerfil"
+                        type="text"
+                        value={nombrePerfil}
+                        onChange={e => setNombrePerfil(e.target.value)}
+                        placeholder="AdriÃ¡n"
+                        required
+                        disabled={submitting}
+                        className="border-amber-200 focus-visible:ring-amber-400"
+                      />
+                    </div>
+                  </>
+                )}
+
+                {/* Campos de "Unirse con cÃ³digo" */}
+                {mode === 'join' && (
+                  <>
+                    <div>
+                      <label htmlFor="codigoInvitacion" className="block text-sm font-medium text-amber-900 mb-1">
+                        CÃ³digo de invitaciÃ³n
+                      </label>
+                      <Input
+                        id="codigoInvitacion"
+                        type="text"
+                        value={codigoInvitacion}
+                        onChange={e => setCodigoInvitacion(e.target.value.toUpperCase())}
+                        placeholder="XXXXXXXX"
+                        required
+                        disabled={submitting}
+                        className="border-amber-200 font-mono tracking-widest text-center text-lg focus-visible:ring-amber-400"
+                        maxLength={8}
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="nombrePerfilJoin" className="block text-sm font-medium text-amber-900 mb-1">
+                        Tu nombre
+                      </label>
+                      <Input
+                        id="nombrePerfilJoin"
+                        type="text"
+                        value={nombrePerfil}
+                        onChange={e => setNombrePerfil(e.target.value)}
+                        placeholder="MarÃ­a"
+                        required
+                        disabled={submitting}
+                        className="border-amber-200 focus-visible:ring-amber-400"
+                      />
+                    </div>
+                  </>
+                )}
+
+                {/* Email y contraseÃ±a â€” siempre visibles */}
+                <div>
+                  <label htmlFor="email" className="block text-sm font-medium text-amber-900 mb-1">
+                    Email
+                  </label>
+                  <Input
+                    id="email"
+                    type="email"
+                    value={email}
+                    onChange={e => setEmail(e.target.value)}
+                    placeholder="tu@email.com"
+                    required
+                    disabled={submitting}
+                    className="border-amber-200 focus-visible:ring-amber-400"
+                  />
+                </div>
+
+                <div>
+                  <label htmlFor="password" className="block text-sm font-medium text-amber-900 mb-1">
+                    ContraseÃ±a
+                  </label>
+                  <Input
+                    id="password"
+                    type="password"
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢"
+                    required
+                    minLength={6}
+                    disabled={submitting}
+                    className="border-amber-200 focus-visible:ring-amber-400"
+                  />
+                </div>
+
+                {error && (
+                  <div className="p-3 rounded-md text-sm border bg-red-50 border-red-200 text-red-700">
+                    {error}
+                  </div>
+                )}
+
+                <Button
+                  type="submit"
+                  disabled={submitting}
+                  className="w-full bg-amber-700 hover:bg-amber-800 text-white font-semibold h-11"
+                >
+                  {submitting
+                    ? mode === 'register' ? 'Creando hogar...'
+                    : mode === 'join' ? 'UniÃ©ndose...'
+                    : 'Entrando...'
+                    : mode === 'login' ? 'Entrar'
+                    : mode === 'register' ? 'Crear hogar'
+                    : 'Unirse al hogar'}
+                </Button>
+              </form>
+            </div>
+
+            <div className="px-8 pb-6 text-center">
+              <p className="text-xs text-amber-600/50">Tu hogar, tus reglas ðŸ¡</p>
+            </div>
+          </motion.aside>
+        </>
+      )}
+    </AnimatePresence>
+  )
+}
+=== app\api\auth\login\route.ts ===
+import { NextRequest, NextResponse } from 'next/server'
+import bcrypt from 'bcryptjs'
+import { prisma } from '@/lib/prisma'
+import { signToken } from '@/lib/jwt'
+import { AUTH_COOKIE } from '@/lib/auth-server'
+
+export async function POST(req: NextRequest) {
+  try {
+    const { email, password } = await req.json()
+
+    if (!email || !password) {
+      return NextResponse.json({ error: 'Email y contraseÃ±a son requeridos' }, { status: 400 })
+    }
+
+    const usuario = await prisma.usuario.findUnique({ where: { email } })
+    if (!usuario) {
+      return NextResponse.json({ error: 'Email o contraseÃ±a incorrectos' }, { status: 401 })
+    }
+
+    const passwordOk = await bcrypt.compare(password, usuario.password)
+    if (!passwordOk) {
+      return NextResponse.json({ error: 'Email o contraseÃ±a incorrectos' }, { status: 401 })
+    }
+
+    const token = signToken({ userId: usuario.id, email: usuario.email })
+
+    const res = NextResponse.json({ user: { id: usuario.id, email: usuario.email } })
+    res.cookies.set(AUTH_COOKIE.name, token, AUTH_COOKIE.options)
+    return res
+  } catch {
+    return NextResponse.json({ error: 'Error interno del servidor' }, { status: 500 })
+  }
+}
+=== app\api\auth\register\route.ts ===
+import { NextRequest, NextResponse } from 'next/server'
+import bcrypt from 'bcryptjs'
+import { randomBytes } from 'crypto'
+import { prisma } from '@/lib/prisma'
+import { signToken } from '@/lib/jwt'
+import { AUTH_COOKIE } from '@/lib/auth-server'
+
+function generarCodigo(): string {
+  return randomBytes(4).toString('hex').toUpperCase()
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    const { email, password, mode, nombreHogar, nombrePerfil, codigoInvitacion } = await req.json()
+
+    if (!email || !password || !nombrePerfil || !mode) {
+      return NextResponse.json({ error: 'Faltan campos requeridos' }, { status: 400 })
+    }
+
+    if (password.length < 6) {
+      return NextResponse.json({ error: 'La contraseÃ±a debe tener al menos 6 caracteres' }, { status: 400 })
+    }
+
+    const existente = await prisma.usuario.findUnique({ where: { email } })
+    if (existente) {
+      return NextResponse.json({ error: 'Ya existe una cuenta con ese email' }, { status: 409 })
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10)
+    const usuario = await prisma.usuario.create({
+      data: { email, password: hashedPassword },
+    })
+
+    if (mode === 'crear') {
+      if (!nombreHogar) {
+        await prisma.usuario.delete({ where: { id: usuario.id } })
+        return NextResponse.json({ error: 'El nombre del hogar es requerido' }, { status: 400 })
+      }
+
+      await prisma.hogar.create({
+        data: {
+          nombre: nombreHogar,
+          codigoInvitacion: generarCodigo(),
+          perfiles: {
+            create: {
+              userId: usuario.id,
+              nombre: nombrePerfil,
+              rol: 'admin',
+              xp: 0,
+              xpMensual: 0,
+            },
+          },
+        },
+      })
+    } else if (mode === 'unirse') {
+      if (!codigoInvitacion) {
+        await prisma.usuario.delete({ where: { id: usuario.id } })
+        return NextResponse.json({ error: 'El cÃ³digo de invitaciÃ³n es requerido' }, { status: 400 })
+      }
+
+      const hogar = await prisma.hogar.findUnique({
+        where: { codigoInvitacion: codigoInvitacion.trim().toUpperCase() },
+      })
+
+      if (!hogar) {
+        await prisma.usuario.delete({ where: { id: usuario.id } })
+        return NextResponse.json({ error: 'CÃ³digo de invitaciÃ³n no vÃ¡lido' }, { status: 404 })
+      }
+
+      await prisma.perfil.create({
+        data: {
+          userId: usuario.id,
+          hogarId: hogar.id,
+          nombre: nombrePerfil,
+          rol: 'miembro',
+          xp: 0,
+          xpMensual: 0,
+        },
+      })
+    } else {
+      await prisma.usuario.delete({ where: { id: usuario.id } })
+      return NextResponse.json({ error: 'Modo invÃ¡lido' }, { status: 400 })
+    }
+
+    const token = signToken({ userId: usuario.id, email: usuario.email })
+
+    const res = NextResponse.json(
+      { user: { id: usuario.id, email: usuario.email } },
+      { status: 201 }
+    )
+    res.cookies.set(AUTH_COOKIE.name, token, AUTH_COOKIE.options)
+    return res
+  } catch {
+    return NextResponse.json({ error: 'Error interno del servidor' }, { status: 500 })
+  }
+}

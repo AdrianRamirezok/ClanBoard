@@ -1,0 +1,62 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+model Usuario {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  email     String   @unique
+  password  String
+  createdAt DateTime @default(now())
+}
+
+model Hogar {
+  id               String         @id @default(auto()) @map("_id") @db.ObjectId
+  nombre           String
+  codigoInvitacion String         @unique
+  createdAt        DateTime       @default(now())
+  perfiles         Perfil[]
+  tareas           Tarea[]
+  listaCompras     ListaCompras[]
+}
+
+model Perfil {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String   @unique
+  hogarId   String   @db.ObjectId
+  nombre    String
+  rol       String   @default("miembro")
+  avatar    String?
+  xp        Int      @default(0)
+  xpMensual Int      @default(0)
+  createdAt DateTime @default(now())
+  hogar     Hogar    @relation(fields: [hogarId], references: [id])
+}
+
+model Tarea {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  hogarId     String   @db.ObjectId
+  titulo      String
+  descripcion String?
+  asignadoA   String?  @db.ObjectId
+  completada  Boolean  @default(false)
+  xpValor     Int      @default(10)
+  color       String?
+  fechaLimite String?
+  createdAt   DateTime @default(now())
+  hogar       Hogar    @relation(fields: [hogarId], references: [id])
+}
+
+model ListaCompras {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  hogarId     String   @db.ObjectId
+  nombre      String
+  agregadoPor String?  @db.ObjectId
+  comprado    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  hogar       Hogar    @relation(fields: [hogarId], references: [id])
+}

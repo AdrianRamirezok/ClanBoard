@@ -1,15 +1,14 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
-import { createClient } from '@/lib/supabase/client'
+import { useState, useEffect, useCallback } from 'react'
 
 interface ItemDB {
   id: string
-  hogar_id: string
+  hogarId: string
   nombre: string
   comprado: boolean
-  agregado_por: string | null
-  created_at: string
+  agregadoPor: string | null
+  createdAt: string
 }
 
 export interface ShoppingItem {
@@ -25,13 +24,12 @@ function itemFromDB(row: ItemDB): ShoppingItem {
     id: row.id,
     nombre: row.nombre,
     comprado: row.comprado,
-    agregadoPor: row.agregado_por,
-    createdAt: new Date(row.created_at),
+    agregadoPor: row.agregadoPor,
+    createdAt: new Date(row.createdAt),
   }
 }
 
 export function useShoppingList(hogarId: string | null, miPerfilId: string | null) {
-  const supabase = useMemo(() => createClient(), [])
   const [items, setItems] = useState<ShoppingItem[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -41,68 +39,53 @@ export function useShoppingList(hogarId: string | null, miPerfilId: string | nul
       return
     }
     setLoading(true)
-    supabase
-      .from('lista_compras')
-      .select('*')
-      .eq('hogar_id', hogarId)
-      .order('created_at', { ascending: true })
-      .then(({ data }) => {
-        setItems((data ?? []).map(d => itemFromDB(d as ItemDB)))
+    fetch('/api/lista-compras')
+      .then(res => res.json())
+      .then((data: ItemDB[]) => {
+        setItems(data.map(itemFromDB))
         setLoading(false)
       })
-  }, [hogarId, supabase])
+      .catch(() => setLoading(false))
+  }, [hogarId])
 
   const addItem = useCallback(
     async (nombre: string) => {
       if (!hogarId || !miPerfilId) return
-      const { data, error } = await supabase
-        .from('lista_compras')
-        .insert({ hogar_id: hogarId, nombre: nombre.trim(), agregado_por: miPerfilId, comprado: false })
-        .select()
-        .single()
-      if (!error && data) {
-        setItems(prev => [...prev, itemFromDB(data as ItemDB)])
+      const res = await fetch('/api/lista-compras', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nombre }),
+      })
+      if (res.ok) {
+        const data: ItemDB = await res.json()
+        setItems(prev => [...prev, itemFromDB(data)])
       }
     },
-    [hogarId, miPerfilId, supabase]
+    [hogarId, miPerfilId]
   )
 
-  const toggleItem = useCallback(
-    async (itemId: string) => {
-      setItems(prev => {
-        const item = prev.find(i => i.id === itemId)
-        if (!item) return prev
-        supabase
-          .from('lista_compras')
-          .update({ comprado: !item.comprado })
-          .eq('id', itemId)
-          .then(() => {})
-        return prev.map(i => i.id === itemId ? { ...i, comprado: !i.comprado } : i)
+  const toggleItem = useCallback(async (itemId: string) => {
+    setItems(prev => {
+      const item = prev.find(i => i.id === itemId)
+      if (!item) return prev
+      fetch(`/api/lista-compras/${itemId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ comprado: !item.comprado }),
       })
-    },
-    [supabase]
-  )
+      return prev.map(i => i.id === itemId ? { ...i, comprado: !i.comprado } : i)
+    })
+  }, [])
 
-  const deleteItem = useCallback(
-    async (itemId: string) => {
-      setItems(prev => prev.filter(i => i.id !== itemId))
-      await supabase.from('lista_compras').delete().eq('id', itemId)
-    },
-    [supabase]
-  )
+  const deleteItem = useCallback(async (itemId: string) => {
+    setItems(prev => prev.filter(i => i.id !== itemId))
+    await fetch(`/api/lista-compras/${itemId}`, { method: 'DELETE' })
+  }, [])
 
-  const clearComprados = useCallback(
-    async () => {
-      setItems(prev => {
-        const ids = prev.filter(i => i.comprado).map(i => i.id)
-        if (ids.length > 0) {
-          supabase.from('lista_compras').delete().in('id', ids).then(() => {})
-        }
-        return prev.filter(i => !i.comprado)
-      })
-    },
-    [supabase]
-  )
+  const clearComprados = useCallback(async () => {
+    setItems(prev => prev.filter(i => !i.comprado))
+    await fetch('/api/lista-compras/clear', { method: 'DELETE' })
+  }, [])
 
   return { items, loading, addItem, toggleItem, deleteItem, clearComprados }
 }
