@@ -5,13 +5,20 @@ import { PrismaAdapter } from '@auth/prisma-adapter'
 import { prisma } from '@/lib/prisma'
 import bcrypt from 'bcryptjs'
 
+console.log('[auth.ts] ENV check:', {
+  AUTH_SECRET: process.env.AUTH_SECRET ? '✓ set' : '✗ missing',
+  AUTH_GOOGLE_ID: process.env.AUTH_GOOGLE_ID ? '✓ set' : '✗ missing',
+  AUTH_GOOGLE_SECRET: process.env.AUTH_GOOGLE_SECRET ? '✓ set' : '✗ missing',
+  NEXTAUTH_URL: process.env.NEXTAUTH_URL ?? process.env.AUTH_URL ?? '✗ missing',
+})
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
   adapter: PrismaAdapter(prisma),
-  secret: process.env.AUTH_SECRET ?? process.env.NEXTAUTH_SECRET,
+  secret: process.env.AUTH_SECRET,
   providers: [
     Google({
-      clientId: process.env.AUTH_GOOGLE_ID ?? process.env.GOOGLE_CLIENT_ID,
-      clientSecret: process.env.AUTH_GOOGLE_SECRET ?? process.env.GOOGLE_CLIENT_SECRET,
+      clientId: process.env.AUTH_GOOGLE_ID,
+      clientSecret: process.env.AUTH_GOOGLE_SECRET,
     }),
     Credentials({
       credentials: {
