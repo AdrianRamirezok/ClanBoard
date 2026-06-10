@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getAuthUser } from '@/lib/auth-server'
+import { auth } from '@/auth'
 import { prisma } from '@/lib/prisma'
 import { randomBytes } from 'crypto'
 
@@ -8,8 +8,10 @@ function generarCodigo(): string {
 }
 
 export async function POST(req: NextRequest) {
-  const authUser = await getAuthUser()
-  if (!authUser) return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
+  const session = await auth()
+  if (!session?.user?.id) {
+    return NextResponse.json({ error: 'No autenticado' }, { status: 401 })
+  }
 
   const body = await req.json()
   const { nombreHogar, nombrePerfil } = body
@@ -24,7 +26,7 @@ export async function POST(req: NextRequest) {
       codigoInvitacion: generarCodigo(),
       perfiles: {
         create: {
-          userId: authUser.userId,
+          userId: session.user.id,
           nombre: nombrePerfil,
           rol: 'admin',
           xp: 0,

@@ -1,6 +1,7 @@
 'use client'
 
-import { createContext, useContext, useState, useEffect } from 'react'
+import { createContext, useContext, useState } from 'react'
+import { SessionProvider, useSession, signIn, signOut } from 'next-auth/react'
 
 export interface AuthUser {
   id: string
@@ -26,7 +27,9 @@ interface AuthContextType {
   user: AuthUser | null
   loading: boolean
   settingUp: boolean
+  hasProfile: boolean
   login: (email: string, password: string) => Promise<void>
+  loginWithGoogle: () => Promise<void>
   signup: (params: SignupParams) => Promise<void>
   joinHogar: (params: JoinParams) => Promise<void>
   logout: () => Promise<void>
@@ -34,33 +37,24 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
-export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<AuthUser | null>(null)
-  const [loading, setLoading] = useState(true)
+function AuthContextInner({ children }: { children: React.ReactNode }) {
+  const { data: session, status } = useSession()
   const [settingUp, setSettingUp] = useState(false)
 
-  useEffect(() => {
-    fetch('/api/auth/me')
-      .then(res => res.ok ? res.json() : null)
-      .then(data => {
-        setUser(data?.user ?? null)
-        setLoading(false)
-      })
-      .catch(() => setLoading(false))
-  }, [])
+  const loading = status === 'loading'
+  const isLoggedIn = status === 'authenticated'
+  const user = session?.user
+    ? { id: session.user.id, email: session.user.email }
+    : null
+  const hasProfile = session?.user?.hasProfile ?? false
 
   const login = async (email: string, password: string) => {
-    const res = await fetch('/api/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password }),
-    })
-    if (!res.ok) {
-      const err = await res.json()
-      throw new Error(err.error || 'Error al iniciar sesión')
-    }
-    const { user: userData } = await res.json()
-    setUser(userData)
+    const result = await signIn('credentials', { email, password, redirect: false })
+    if (result?.error) throw new Error('Email o contraseña incorrectos')
+  }
+
+  const loginWithGoogle = async () => {
+    await signIn('google', { callbackUrl: '/' })
   }
 
   const signup = async ({ email, password, nombreHogar, nombrePerfil }: SignupParams) => {
@@ -75,8 +69,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const err = await res.json()
         throw new Error(err.error || 'Error al crear el hogar')
       }
-      const { user: userData } = await res.json()
-      setUser(userData)
+      const result = await signIn('credentials', { email, password, redirect: false })
+      if (result?.error) throw new Error('Error al iniciar sesión tras el registro')
     } finally {
       setSettingUp(false)
     }
@@ -94,22 +88,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const err = await res.json()
         throw new Error(err.error || 'Error al unirse al hogar')
       }
-      const { user: userData } = await res.json()
-      setUser(userData)
+      const result = await signIn('credentials', { email, password, redirect: false })
+      if (result?.error) throw new Error('Error al iniciar sesión tras el registro')
     } finally {
       setSettingUp(false)
     }
   }
 
   const logout = async () => {
-    await fetch('/api/auth/logout', { method: 'POST' })
-    setUser(null)
+    await signOut({ redirect: false })
   }
 
   return (
-    <AuthContext.Provider value={{ isLoggedIn: !!user, user, loading, settingUp, login, signup, joinHogar, logout }}>
+    <AuthContext.Provider
+      value={{ isLoggedIn, user, loading, settingUp, hasProfile, login, loginWithGoogle, signup, joinHogar, logout }}
+    >
       {children}
     </AuthContext.Provider>
+  )
+}
+
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  return (
+    <SessionProvider>
+      <AuthContextInner>{children}</AuthContextInner>
+    </SessionProvider>
   )
 }
 

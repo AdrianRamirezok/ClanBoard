@@ -3,11 +3,12 @@
 import { useState } from 'react'
 import { useAuth } from '@/lib/auth-context'
 import { AuthDrawer, type AuthMode } from '@/components/auth-drawer'
+import { HogarSetupSheet } from '@/components/hogar-setup-sheet'
 import { HomeBoard } from '@/components/home-board'
 import { Button } from '@/components/ui/button'
 
 export default function Page() {
-  const { isLoggedIn, loading, settingUp } = useAuth()
+  const { isLoggedIn, loading, settingUp, hasProfile } = useAuth()
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [drawerMode, setDrawerMode] = useState<AuthMode>('login')
 
@@ -31,6 +32,9 @@ export default function Page() {
       </div>
     )
   }
+
+  // Google user logged in but hasn't set up a household yet
+  if (isLoggedIn && !hasProfile) return <HogarSetupSheet />
 
   if (isLoggedIn) return <HomeBoard />
 
