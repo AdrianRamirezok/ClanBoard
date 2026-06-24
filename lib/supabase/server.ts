@@ -1,6 +1,6 @@
-// Supabase Auth ha sido reemplazado por JWT + MongoDB.
+// Supabase Auth ha sido reemplazado por Auth.js (NextAuth) + MongoDB.
 // Este archivo se mantiene para no romper imports residuales,
-// pero no debe usarse. Usa lib/auth-server.ts en su lugar.
+// pero no debe usarse. Usa auth() de @/auth en su lugar.
 export async function createClient(): Promise<never> {
-  throw new Error('Supabase Auth eliminado. Usa lib/auth-server.ts (getAuthUser).')
+  throw new Error('Supabase Auth eliminado. Usa auth() de @/auth.')
 }

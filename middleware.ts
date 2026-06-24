@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server'
 
-// El middleware ya no gestiona autenticación de Supabase.
-// La autenticación se maneja por JWT en cada API route mediante lib/auth-server.ts.
+// El middleware ya no gestiona autenticación.
+// La autenticación se maneja con Auth.js (NextAuth) en cada API route mediante auth() de @/auth.
 export function middleware(request: NextRequest) {
   return NextResponse.next()
 }

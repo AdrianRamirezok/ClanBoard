@@ -22,7 +22,7 @@ export const swaggerSpec = {
         in: 'cookie',
         name: 'authjs.session-token',
         description:
-          'Cookie de sesión JWT establecida automáticamente por Auth.js al iniciar sesión con email/contraseña o Google OAuth.',
+          'Cookie de sesión JWT establecida automáticamente por Auth.js al iniciar sesión con Google OAuth o Magic Link (Resend).',
       },
     },
     schemas: {
@@ -127,22 +127,21 @@ export const swaggerSpec = {
     },
   },
   paths: {
-    '/auth/login': {
+    '/auth/signin/resend': {
       post: {
         tags: ['auth'],
-        summary: 'Iniciar sesión con email y contraseña',
+        summary: 'Enviar Magic Link por email (Resend)',
         description:
-          'Valida credenciales contra la base de datos. La sesión se gestiona via Auth.js (cookie JWT). Las cuentas creadas con Google no tienen contraseña y deben usar `signIn("google")`.',
+          'Endpoint gestionado por Auth.js. En el cliente se invoca con `signIn("resend", { email, redirect: false })`. Auth.js genera un token de verificación (modelo `VerificationToken`), lo persiste y envía por email — vía Resend, remitente `ClanBoard <onboarding@resend.dev>` — un enlace mágico. Al abrir el enlace el usuario queda autenticado y, si no existía, su cuenta se crea automáticamente. **No se usan contraseñas.**',
         requestBody: {
           required: true,
           content: {
-            'application/json': {
+            'application/x-www-form-urlencoded': {
               schema: {
                 type: 'object',
-                required: ['email', 'password'],
+                required: ['email'],
                 properties: {
                   email: { type: 'string', format: 'email', example: 'usuario@ejemplo.com' },
-                  password: { type: 'string', minLength: 6, example: 'mi_contraseña' },
                 },
               },
             },
@@ -150,123 +149,14 @@ export const swaggerSpec = {
         },
         responses: {
           '200': {
-            description: 'Login exitoso — devuelve el usuario',
-            content: {
-              'application/json': {
-                schema: {
-                  type: 'object',
-                  properties: { user: { $ref: '#/components/schemas/User' } },
-                },
-              },
-            },
+            description: 'Magic link enviado correctamente al email indicado',
+          },
+          '302': {
+            description: 'Redirección al flujo de verificación de Auth.js',
           },
           '400': {
-            description: 'Email o contraseña no enviados',
+            description: 'Email faltante o inválido',
             content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } },
-          },
-          '401': {
-            description: 'Credenciales incorrectas o cuenta vinculada a Google',
-            content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } },
-          },
-          '500': {
-            description: 'Error interno del servidor',
-            content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } },
-          },
-        },
-      },
-    },
-
-    '/auth/register': {
-      post: {
-        tags: ['auth'],
-        summary: 'Registrarse y crear o unirse a un hogar',
-        description:
-          'Crea un usuario con email/contraseña y según el `mode`:\n- **crear**: genera un hogar nuevo con el usuario como administrador.\n- **unirse**: agrega al usuario a un hogar existente usando el código de invitación.',
-        requestBody: {
-          required: true,
-          content: {
-            'application/json': {
-              schema: {
-                oneOf: [
-                  {
-                    title: 'Crear hogar',
-                    type: 'object',
-                    required: ['email', 'password', 'nombrePerfil', 'mode', 'nombreHogar'],
-                    properties: {
-                      email: { type: 'string', format: 'email', example: 'usuario@ejemplo.com' },
-                      password: { type: 'string', minLength: 6, example: 'mi_contraseña' },
-                      nombrePerfil: { type: 'string', example: 'Adrián' },
-                      mode: { type: 'string', enum: ['crear'], example: 'crear' },
-                      nombreHogar: { type: 'string', example: 'Casa Familia García' },
-                    },
-                  },
-                  {
-                    title: 'Unirse a hogar existente',
-                    type: 'object',
-                    required: ['email', 'password', 'nombrePerfil', 'mode', 'codigoInvitacion'],
-                    properties: {
-                      email: { type: 'string', format: 'email', example: 'otro@ejemplo.com' },
-                      password: { type: 'string', minLength: 6, example: 'otra_contraseña' },
-                      nombrePerfil: { type: 'string', example: 'María' },
-                      mode: { type: 'string', enum: ['unirse'], example: 'unirse' },
-                      codigoInvitacion: { type: 'string', example: 'A1B2C3D4' },
-                    },
-                  },
-                ],
-              },
-            },
-          },
-        },
-        responses: {
-          '201': {
-            description: 'Registro exitoso — devuelve el usuario creado',
-            content: {
-              'application/json': {
-                schema: {
-                  type: 'object',
-                  properties: { user: { $ref: '#/components/schemas/User' } },
-                },
-              },
-            },
-          },
-          '400': {
-            description: 'Campos faltantes, contraseña muy corta o modo inválido',
-            content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } },
-          },
-          '404': {
-            description: 'Código de invitación no válido (modo unirse)',
-            content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } },
-          },
-          '409': {
-            description: 'Ya existe una cuenta con ese email',
-            content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } },
-          },
-          '500': {
-            description: 'Error interno del servidor',
-            content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } },
-          },
-        },
-      },
-    },
-
-    '/auth/logout': {
-      post: {
-        tags: ['auth'],
-        summary: 'Cerrar sesión (elimina cookie legacy)',
-        description:
-          'Elimina la cookie `auth-token` del sistema de autenticación legacy. Para sesiones Auth.js, usar `signOut()` en el cliente.',
-        security: [{ sessionCookie: [] }],
-        responses: {
-          '200': {
-            description: 'Logout exitoso',
-            content: {
-              'application/json': {
-                schema: {
-                  type: 'object',
-                  properties: { ok: { type: 'boolean', example: true } },
-                },
-              },
-            },
           },
         },
       },
@@ -277,7 +167,7 @@ export const swaggerSpec = {
         tags: ['auth'],
         summary: 'Obtener el usuario autenticado actual',
         description:
-          'Devuelve el usuario de la sesión activa. Compatible con cookie legacy y sesiones Auth.js JWT.',
+          'Devuelve el usuario de la sesión activa de Auth.js (JWT). Útil para verificar el estado de autenticación.',
         security: [{ sessionCookie: [] }],
         responses: {
           '200': {

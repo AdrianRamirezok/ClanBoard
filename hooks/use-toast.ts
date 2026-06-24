@@ -1,4 +1,4 @@
-demo@example.comdemo@example.comdemo@example.com'use client'
+'use client'
 
 // Inspired by react-hot-toast library
 import * as React from 'react'

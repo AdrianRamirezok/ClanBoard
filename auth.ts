@@ -1,14 +1,14 @@
 import NextAuth from 'next-auth'
 import Google from 'next-auth/providers/google'
-import Credentials from 'next-auth/providers/credentials'
+import Resend from 'next-auth/providers/resend'
 import { PrismaAdapter } from '@auth/prisma-adapter'
 import { prisma } from '@/lib/prisma'
-import bcrypt from 'bcryptjs'
 
 console.log('[auth.ts] ENV check:', {
   AUTH_SECRET: process.env.AUTH_SECRET ? '✓ set' : '✗ missing',
   AUTH_GOOGLE_ID: process.env.AUTH_GOOGLE_ID ? '✓ set' : '✗ missing',
   AUTH_GOOGLE_SECRET: process.env.AUTH_GOOGLE_SECRET ? '✓ set' : '✗ missing',
+  RESEND_API_KEY: process.env.RESEND_API_KEY ? '✓ set' : '✗ missing',
   NEXTAUTH_URL: process.env.NEXTAUTH_URL ?? process.env.AUTH_URL ?? '✗ missing',
 })
 
@@ -20,29 +20,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       clientId: process.env.AUTH_GOOGLE_ID,
       clientSecret: process.env.AUTH_GOOGLE_SECRET,
     }),
-    Credentials({
-      credentials: {
-        email: { label: 'Email', type: 'email' },
-        password: { label: 'Contraseña', type: 'password' },
-      },
-      authorize: async (credentials) => {
-        if (!credentials?.email || !credentials?.password) return null
-
-        const user = await prisma.user.findUnique({
-          where: { email: credentials.email as string },
-        })
-
-        if (!user?.password) return null
-
-        const valid = await bcrypt.compare(
-          credentials.password as string,
-          user.password
-        )
-
-        if (!valid) return null
-
-        return { id: user.id, email: user.email }
-      },
+    Resend({
+      from: 'ClanBoard <noreply@hydrovision.com.ar>',
+      apiKey: process.env.RESEND_API_KEY,
     }),
   ],
   session: { strategy: 'jwt' },
